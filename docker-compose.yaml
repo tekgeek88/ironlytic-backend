@@ -1,0 +1,16 @@
+version: '3.9'
+services:
+  postgres:
+    image: postgres:16
+    container_name: ironlytic_postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: ironlytic_development
+      POSTGRES_PASSWORD: ironlytic_password
+      POSTGRES_USER: ironlytic_development_user
+    volumes:
+      - ironlytic_pg_data:/var/lib/postgresql/data
+
+volumes:
+  ironlytic_pg_data:
