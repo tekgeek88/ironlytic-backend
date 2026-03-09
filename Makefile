@@ -18,7 +18,7 @@ DATABASE_URL := postgres://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_
 MIGRATE_DIR := ./migrations
 
 # ---------- Build ----------
-APP_NAME := ironlytic-api
+APP_NAME := ironlytic-backend
 GOOS         ?= $(shell go env GOOS)
 GOARCH       ?= $(shell go env GOARCH)
 CGO_ENABLED  ?= 0
