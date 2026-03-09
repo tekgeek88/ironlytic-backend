@@ -1,5 +1,5 @@
 # Stage 1: Build the Go binary
-FROM golang:1.24.0 AS builder
+FROM golang:1.25.0 AS builder
 
 # Set the environement
 ARG ENV=staging
