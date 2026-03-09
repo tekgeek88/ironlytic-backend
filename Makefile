@@ -51,7 +51,7 @@ debug:
 
 build:
 	@echo "Building $(APP_NAME) VERSION=$(VERSION) COMMIT=$(COMMIT) ENV=$(ENV)"
-	@CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build -o bin/$(APP_NAME) -ldflags "$(LD_FLAGS)" ./cmd/api
+	@CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build -o $(APP_NAME) -ldflags "$(LD_FLAGS)" ./cmd/api
 
 tidy:
 	go mod tidy
