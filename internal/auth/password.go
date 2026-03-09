@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"fmt"
+	"strings"
 
 	"golang.org/x/crypto/argon2"
 )
@@ -59,46 +60,34 @@ func VerifyPassword(password, encoded string) (bool, error) {
 }
 
 func decodeHash(encoded string) (ArgonParams, []byte, []byte, error) {
+	parts := strings.Split(encoded, "$")
+	if len(parts) != 6 {
+		return ArgonParams{}, nil, nil, fmt.Errorf("invalid hash format")
+	}
+	if parts[1] != "argon2id" {
+		return ArgonParams{}, nil, nil, fmt.Errorf("unsupported variant: %s", parts[1])
+	}
+	if parts[2] != "v=19" {
+		return ArgonParams{}, nil, nil, fmt.Errorf("unsupported version: %s", parts[2])
+	}
+
 	var p ArgonParams
-
-	var variant string
-	var version int
-	_, err := fmt.Sscanf(encoded, "$%s$v=%d$m=%d,t=%d,p=%d$",
-		&variant, &version, &p.Memory, &p.Time, &p.Parallelism,
-	)
+	_, err := fmt.Sscanf(parts[3], "m=%d,t=%d,p=%d", &p.Memory, &p.Time, &p.Parallelism)
 	if err != nil {
-		return p, nil, nil, fmt.Errorf("invalid hash format: %w", err)
-	}
-	if variant != "argon2id" {
-		return p, nil, nil, fmt.Errorf("unsupported variant: %s", variant)
-	}
-	if version != 19 {
-		return p, nil, nil, fmt.Errorf("unsupported version: %d", version)
+		return ArgonParams{}, nil, nil, fmt.Errorf("invalid params: %w", err)
 	}
 
-	// Split for salt/hash
-	// expected: $argon2id$v=19$m=...,t=...,p=...$salt$hash
-	parts := split(encoded, '$')
-	if len(parts) < 6 {
-		return p, nil, nil, fmt.Errorf("invalid hash parts")
-	}
-
-	saltB64 := parts[4]
-	hashB64 := parts[5]
-
-	salt, err := base64.RawStdEncoding.DecodeString(saltB64)
+	salt, err := base64.RawStdEncoding.DecodeString(parts[4])
 	if err != nil {
-		return p, nil, nil, fmt.Errorf("decode salt: %w", err)
+		return ArgonParams{}, nil, nil, fmt.Errorf("decode salt: %w", err)
 	}
-
-	hash, err := base64.RawStdEncoding.DecodeString(hashB64)
+	hash, err := base64.RawStdEncoding.DecodeString(parts[5])
 	if err != nil {
-		return p, nil, nil, fmt.Errorf("decode hash: %w", err)
+		return ArgonParams{}, nil, nil, fmt.Errorf("decode hash: %w", err)
 	}
 
 	p.SaltLen = uint32(len(salt))
 	p.KeyLen = uint32(len(hash))
-
 	return p, salt, hash, nil
 }
 

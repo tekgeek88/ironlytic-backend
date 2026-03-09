@@ -25,7 +25,7 @@ type Config struct {
 }
 
 func Load() Config {
-	appEnv := getEnv("APP_ENV", "development")
+	appEnv := getEnv("ENV", "development")
 
 	// Prefer explicit full address if provided, but normalize common "just a port" input.
 	appAddr := getAddr(

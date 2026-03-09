@@ -59,6 +59,7 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pg *db.Postgres) *gin.Eng
 	router.GET("/readyz", healthHandler.Readyz)
 
 	api := router.Group("/api/v1")
+	api.Use(middleware.OptionalAuth(logger, authSvc, sessionCfg.CookieName))
 	{
 		api.GET("/health", healthHandler.Healthz)
 
@@ -71,6 +72,10 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pg *db.Postgres) *gin.Eng
 			authGroup.GET("/me", authHandler.Me)
 		}
 	}
+
+	app := api.Group("")
+	app.Use(middleware.RequireAuth())
+	// app.GET("/routines", ...)
 
 	return router
 }
