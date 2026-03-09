@@ -1,0 +1,87 @@
+name: Deploy to Staging
+
+on:
+  push:
+    branches:
+      - staging
+
+jobs:
+  build-and-deploy:
+    name: Build and Deploy to Staging
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    env:
+      IMAGE_NAME: tekgeek88/ironlytic-backend
+      MIGRATIONS_IMAGE_NAME: tekgeek88/ironlytic-migrations
+
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🏷️ Set Version from Commit SHA
+        run: |
+          SHORT_SHA=$(echo "${GITHUB_SHA}" | cut -c1-7)
+          VERSION="staging-${SHORT_SHA}"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: 🔐 Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: 🛠️ Build and Push Backend Image
+        run: |
+          docker build --build-arg ENV=staging -t $IMAGE_NAME:$VERSION .
+          docker push $IMAGE_NAME:$VERSION
+
+      - name: 🛠️ Build and Push Migration Image
+        run: |
+          docker build -f Dockerfile.migrations -t $MIGRATIONS_IMAGE_NAME:$VERSION .
+          docker push $MIGRATIONS_IMAGE_NAME:$VERSION
+
+      - name: 🔧 Install Kustomize
+        run: |
+          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+          sudo mv kustomize /usr/local/bin/
+
+      - name: 🚀 Update ArgoCD GitOps Repo (Staging)
+        run: |
+          # ✅ Setup variables
+          REPO_URL="https://x-access-token:${{ secrets.GH_PAT }}@github.com/tekgeek88/argocd-apps.git"
+          REPO_NAME="argocd-apps"
+          VERSION_TAG="${{ env.VERSION }}"
+          TIMESTAMP=$(date +%s)
+          REPO_PATH="$GITHUB_WORKSPACE/$REPO_NAME"
+          
+          # ✅ Configure git
+          git config --global user.name "github-actions"
+          git config --global user.email "actions@github.com"
+          
+          # ✅ Clone GitOps repo
+          git clone "$REPO_URL" "$REPO_PATH"
+          
+          # ✅ Update deployment.yaml annotation
+          cd "$REPO_PATH/apps/ironlytic/backend/overlays/staging"
+          echo "📦 Updating kustomization.yaml image tag to $VERSION_TAG"
+          kustomize edit set image tekgeek88/ironlytic-backend=tekgeek88/ironlytic-backend:$VERSION_TAG
+
+          echo "📝 Bumping last-update annotation in deployment.yaml..."
+          sed -i "s/last-update: \".*\"/last-update: \"$TIMESTAMP\"/" deployment.yaml || true
+          
+          # ✅ Update migration job image 
+          echo "Updating migration job image to $MIGRATIONS_IMAGE_NAME:$VERSION_TAG"
+          sed -i "s|image: .*|image: $MIGRATIONS_IMAGE_NAME:$VERSION_TAG|" migrations/db-migrate-job.yaml || true
+          sed -i "s|^  name: ironlytic-db-migrate-staging-.*$|  name: ironlytic-db-migrate-${VERSION_TAG}|" migrations/db-migrate-job.yaml
+          
+          cd "$REPO_PATH"
+          if [ -n "$(git status --porcelain)" ]; then
+            git add .
+            git commit -m "🔄 Update backend staging image to $VERSION_TAG (timestamp: $TIMESTAMP)"
+            git push origin main
+            echo "✅ Changes pushed to GitOps repo."
+          else
+            echo "ℹ️ No changes to commit."
+          fi

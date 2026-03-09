@@ -1,0 +1,123 @@
+name: Release Backend
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  build-and-release:
+    name: Build and Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    env:
+      IMAGE_NAME: tekgeek88/qme-backend
+      MIGRATIONS_IMAGE_NAME: tekgeek88/qme-migrations
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set Version
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/}"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and Push Docker Image
+        run: |
+          docker build --build-arg ENV=production -t $IMAGE_NAME:$VERSION .
+          docker push $IMAGE_NAME:$VERSION
+          echo "Pushed docker image: Version: $IMAGE_NAME:$VERSION"
+
+      - name: 🛠️ Build and Push Migration Image
+        run: |
+          docker build -f Dockerfile.migrations -t $MIGRATIONS_IMAGE_NAME:$VERSION .
+          docker push $MIGRATIONS_IMAGE_NAME:$VERSION
+          echo "Pushed docker image: Version: $MIGRATIONS_IMAGE_NAME:$VERSION"
+
+      - name: 🔧 Install Kustomize
+        run: |
+          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+          sudo mv kustomize /usr/local/bin/
+
+      - name: Update ArgoCD GitOps Repo (Production)
+        run: |
+          # ✅ Setup variables
+          REPO_URL="https://x-access-token:${{ secrets.GH_PAT }}@github.com/tekgeek88/argocd-apps.git"
+          REPO_NAME="argocd-apps"
+          VERSION_TAG="${{ env.VERSION }}"
+          TIMESTAMP=$(date +%s)
+          REPO_PATH="$GITHUB_WORKSPACE/$REPO_NAME"
+          
+          # ✅ Configure git
+          git config --global user.name "github-actions"
+          git config --global user.email "actions@github.com"
+          
+          # ✅ Clone GitOps repo
+          git clone "$REPO_URL" "$REPO_PATH"
+          
+          # ✅ Update deployment.yaml annotation
+          DEPLOYMENT_FILE="$REPO_PATH/apps/qme/backend/base/deployment.yaml"
+          if [ -f "$DEPLOYMENT_FILE" ]; then
+            sed -i "s/last-update: \".*\"/last-update: \"$TIMESTAMP\"/" "$DEPLOYMENT_FILE"
+            if ! grep -q "last-update:" "$DEPLOYMENT_FILE"; then
+              sed -i '/template:/,/spec:/ { 
+                /metadata:/,/labels:/ { 
+                  /annotations:/!{
+                    /labels:/i\      annotations:\n        last-update: "'$TIMESTAMP'"
+                  }
+                }
+              }' "$DEPLOYMENT_FILE"
+            fi
+          else
+            echo "❌ $DEPLOYMENT_FILE not found!"
+            exit 1
+          fi
+          
+          # ✅ Update kustomization image tag (base)
+          cd "$REPO_PATH/apps/qme/backend/base"
+          kustomize edit set image tekgeek88/qme-backend=tekgeek88/qme-backend:$VERSION_TAG
+          
+          # ✅ Update overlay (newTag)
+          cd "$REPO_PATH/apps/qme/backend/overlays/default"
+          if grep -q "images:" kustomization.yaml; then
+            if grep -q "tekgeek88/qme-backend" kustomization.yaml; then
+              sed -i "s|newTag: .*|newTag: $VERSION_TAG|g" kustomization.yaml
+            else
+              sed -i "/images:/a\\- name: tekgeek88/qme-backend\\n  newName: tekgeek88/qme-backend\\n  newTag: $VERSION_TAG" kustomization.yaml
+            fi
+          else
+            cat >> kustomization.yaml <<EOF
+          
+          images:
+            - name: tekgeek88/qme-backend
+              newName: tekgeek88/qme-backend
+              newTag: $VERSION_TAG
+          EOF
+          fi
+          
+          # ✅ Update migration job image 
+          echo "Updating migration job image to $MIGRATIONS_IMAGE_NAME:$VERSION_TAG"
+          sed -i "s|image: .*|image: $MIGRATIONS_IMAGE_NAME:$VERSION_TAG|" ../production/migrations/db-migrate-job.yaml || true
+          sed -i "s|^  name: qme-db-migrate-.*$|  name: qme-db-migrate-${VERSION_TAG}|" ../production/migrations/db-migrate-job.yaml
+          
+          # ✅ Commit and push
+          cd "$REPO_PATH"
+          if [ -n "$(git status --porcelain)" ]; then
+          git add .
+          git commit -m "🔄 Update backend image to $VERSION_TAG with timestamp $TIMESTAMP"
+          git push origin main
+          echo "✅ Changes committed and pushed."
+          else
+          echo "ℹ️ No changes to commit."
+          fi
+          
+          echo "Deploying Version: $VERSION"

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -15,7 +16,8 @@ func InitDatabase(ctx context.Context, cfg config.Config, logger *slog.Logger) (
 	log.Info("Initializing database connection")
 
 	// First connect to postgres database to create our db if it doesn't exist
-	adminURL := fmt.Sprintf("postgres://%s:%s@%s:%d/postgres",
+
+	adminURL := fmt.Sprintf("postgres://%s:%s@%s:%s/postgres",
 		cfg.DBUser, cfg.DBPassword, cfg.DBHost, cfg.DBPort)
 
 	adminPool, err := pgxpool.New(ctx, adminURL)
@@ -29,8 +31,14 @@ func InitDatabase(ctx context.Context, cfg config.Config, logger *slog.Logger) (
 		return nil, fmt.Errorf("failed to create database: %v", err)
 	}
 
+	// Convert port to int
+	dbPort, err := strconv.Atoi(cfg.DBPort)
+	if err != nil {
+		return nil, fmt.Errorf("invalid port value in DB_PORT: %v", err)
+	}
+
 	// Connect to the actual database
-	dbURL := fmt.Sprintf("postgres://%s:%s@%s:%d/%s", cfg.DBUser, cfg.DBPassword, cfg.DBHost, cfg.DBPort, cfg.DBName)
+	dbURL := fmt.Sprintf("postgres://%s:%s@%s:%d/%s", cfg.DBUser, cfg.DBPassword, cfg.DBHost, dbPort, cfg.DBName)
 
 	dbCfg, err := pgxpool.ParseConfig(dbURL)
 	if err != nil {
@@ -58,7 +66,7 @@ func InitDatabase(ctx context.Context, cfg config.Config, logger *slog.Logger) (
 		return nil, fmt.Errorf("ping database: %w", err)
 	}
 
-	log.Info("successfully connected to postgres", "db_name", cfg.DBName, "host", cfg.Host)
+	log.Info("successfully connected to postgres", "db_name", cfg.DBName, "host", cfg.DBHost)
 	return pool, nil
 }
 
