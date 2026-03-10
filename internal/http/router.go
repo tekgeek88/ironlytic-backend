@@ -27,6 +27,15 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pg *db.Postgres) *gin.Eng
 	httpLogger := logger.With("component", "http")
 	router := gin.New()
 
+	router.Use(cors.New(cors.Config{
+		AllowOrigins:     cfg.CORSAllowedOrigins,
+		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: true,
+		MaxAge:           12 * time.Hour,
+	}))
+
 	router.Use(middleware.RequestID())
 	router.Use(middleware.Logger(httpLogger))
 	router.Use(middleware.Recovery(httpLogger))

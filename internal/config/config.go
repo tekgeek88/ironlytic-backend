@@ -18,10 +18,11 @@ type Config struct {
 	DBPassword string
 	DBSSLMode  string
 
-	SessionCookieName string
-	SessionTTLHours   int
-	CookieSecure      bool
-	CookieSameSite    string
+	SessionCookieName  string
+	SessionTTLHours    int
+	CookieSecure       bool
+	CookieSameSite     string
+	CORSAllowedOrigins []string
 }
 
 func Load() Config {
@@ -44,10 +45,11 @@ func Load() Config {
 		DBPassword: getEnv("DB_PASSWORD", "postgres"),
 		DBSSLMode:  getEnv("DB_SSLMODE", "disable"),
 
-		SessionCookieName: getEnv("SESSION_COOKIE_NAME", "__Host-ironlytic_session"),
-		SessionTTLHours:   getEnvInt("SESSION_TTL_HOURS", 720),
-		CookieSecure:      getEnvBool("COOKIE_SECURE", false),
-		CookieSameSite:    getEnv("COOKIE_SAMESITE", "Lax"),
+		SessionCookieName:  getEnv("SESSION_COOKIE_NAME", "__Host-ironlytic_session"),
+		SessionTTLHours:    getEnvInt("SESSION_TTL_HOURS", 720),
+		CookieSecure:       getEnvBool("COOKIE_SECURE", false),
+		CookieSameSite:     getEnv("COOKIE_SAMESITE", "Lax"),
+		CORSAllowedOrigins: getEnvList("CORS_ALLOWED_ORIGINS", []string{"http://localhost:5173"}),
 	}
 }
 
@@ -109,4 +111,26 @@ func getEnvBool(key string, fallback bool) bool {
 		return fallback
 	}
 	return v == "1" || v == "true" || v == "yes" || v == "y" || v == "on"
+}
+
+func getEnvList(key string, fallback []string) []string {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return fallback
+	}
+
+	parts := strings.Split(v, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		item := strings.TrimSpace(part)
+		if item != "" {
+			out = append(out, item)
+		}
+	}
+
+	if len(out) == 0 {
+		return fallback
+	}
+
+	return out
 }
