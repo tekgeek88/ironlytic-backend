@@ -10,10 +10,11 @@ import (
 	"time"
 
 	"github.com/joho/godotenv"
+
+	"github.com/tekgeek88/ironlytic-backend/internal/api"
 	"github.com/tekgeek88/ironlytic-backend/internal/config"
-	httpserver "github.com/tekgeek88/ironlytic-backend/internal/http"
-	"github.com/tekgeek88/ironlytic-backend/internal/platform/db"
-	apperlog "github.com/tekgeek88/ironlytic-backend/internal/platform/logger"
+	"github.com/tekgeek88/ironlytic-backend/internal/database"
+	apperlog "github.com/tekgeek88/ironlytic-backend/internal/logger"
 )
 
 func main() {
@@ -38,14 +39,14 @@ func main() {
 	startupCtx, startupCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer startupCancel()
 
-	postgres, err := db.NewPostgres(startupCtx, cfg.PostgresDSN())
+	postgres, err := database.NewPostgres(startupCtx, cfg.PostgresDSN())
 	if err != nil {
 		logger.Error("failed to initialize postgres", "error", err)
 		os.Exit(1)
 	}
 	defer postgres.Close()
 
-	router := httpserver.NewRouter(cfg, logger, postgres)
+	router := api.NewRouter(cfg, logger, postgres)
 
 	srv := &http.Server{
 		Addr:              cfg.AppAddr,
